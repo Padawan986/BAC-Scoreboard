@@ -1,0 +1,26 @@
+# ==============================================================================
+# BacapPoints Configuration
+# ==============================================================================
+
+# Which namespaces should be counted for the points calculation?
+# Default is 'blazeandcave' for the BlazeandCaves Advancements Pack.
+namespaces:
+  - "blazeandcave"
+
+# Specific points overrides for individual advancements.
+# Format: "namespace:category/name": points
+# Tip: You can also edit advancements.yml directly to adjust any advancement score!
+overrides:
+  "blazeandcave:bacap/root": 0
+
+# Should the custom scoreboard sidebar be enabled?
+enable-sidebar: true
+
+# Should the scoreboard be shown as a global leaderboard (top players list)?
+sidebar-leaderboard: true
+
+# How many players should be displayed in the leaderboard? (Default is 10)
+leaderboard-size: 10
+
+# Title of the scoreboard in the sidebar (supports color codes with &)
+sidebar-title: "&6&l★ BAC LEADERBOARD ★"

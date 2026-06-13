@@ -1,0 +1,13 @@
+name: BacapPoints
+version: '${version}'
+main: de.padawan985.bacappoints.BacapPoints
+api-version: '1.21'
+author: Padawan985
+description: Displays BACAP points in a sidebar scoreboard and saves them to points.yml
+
+commands:
+  bacappoints:
+    description: Debug and admin command for BacapPoints.
+    aliases: [bacap, bpoints]
+    permission: bacappoints.admin
+    permission-message: §cYou do not have permission to execute this command!
