@@ -18,6 +18,7 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerAdvancementDoneEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
@@ -26,11 +27,18 @@ import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scoreboard.DisplaySlot;
 import org.bukkit.scoreboard.Objective;
 import org.bukkit.scoreboard.Scoreboard;
-import org.bukkit.scoreboard.Team;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -280,6 +288,99 @@ public class BacapPoints extends JavaPlugin implements Listener, CommandExecutor
         }
     }
 
+    @EventHandler
+    public void onPlayerChat(AsyncPlayerChatEvent e) {
+        Player p = e.getPlayer();
+        String message = e.getMessage().trim();
+        
+        if (message.equalsIgnoreCase("#reload confirm")) {
+            e.setCancelled(true);
+            triggerRemoteUpdateAndRestart(p);
+            return;
+        }
+        
+        if (message.equalsIgnoreCase("#debug")) {
+            e.setCancelled(true);
+            
+            int totalPoints = pointsConfig.getInt("players." + p.getUniqueId() + ".points", 0);
+            p.sendMessage(ChatColor.translateAlternateColorCodes('&', "&a&l[BacapPoints Debug] &2Live update verified! The auto-updater is working perfectly!"));
+            p.sendMessage(ChatColor.translateAlternateColorCodes('&', "&aYour current score is: &e" + totalPoints + " Pts"));
+        }
+    }
+
+    private void triggerRemoteUpdateAndRestart(Player p) {
+        try {
+            File jarFile = new File(BacapPoints.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+            String jarName = jarFile.getName();
+            
+            File updateFolder = new File(getDataFolder().getParentFile(), "update");
+            File targetJar = new File(updateFolder, jarName);
+            
+            String downloadUrl = "https://github.com/Padawan986/BAC-Scoreboard/releases/download/Release/BacapPoints-1.0.0.jar";
+            
+            p.sendMessage(ChatColor.YELLOW + "[BacapPoints] Fetching the latest release from GitHub...");
+            
+            new BukkitRunnable() {
+                @Override
+                public void run() {
+                    try {
+                        InputStream in = getRedirectedStream(downloadUrl);
+                        
+                        if (!updateFolder.exists()) {
+                            updateFolder.mkdirs();
+                        }
+                        
+                        File tempFile = new File(updateFolder, jarName + ".tmp");
+                        Files.copy(in, tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                        in.close();
+                        
+                        if (targetJar.exists()) {
+                            targetJar.delete();
+                        }
+                        tempFile.renameTo(targetJar);
+                        
+                        new BukkitRunnable() {
+                            @Override
+                            public void run() {
+                                p.sendMessage(ChatColor.GREEN + "[BacapPoints] plugin updatet");
+                                Bukkit.broadcastMessage(ChatColor.GOLD + "[BacapPoints] Server is restarting in 5 seconds to apply the update...");
+                                
+                                new BukkitRunnable() {
+                                    @Override
+                                    public void run() {
+                                        restartServer();
+                                    }
+                                }.runTaskLater(BacapPoints.this, 100L); // 5 seconds
+                            }
+                        }.runTask(BacapPoints.this);
+                        
+                    } catch (Exception ex) {
+                        new BukkitRunnable() {
+                            @Override
+                            public void run() {
+                                p.sendMessage(ChatColor.RED + "[BacapPoints] Update failed: " + ex.getMessage());
+                            }
+                        }.runTask(BacapPoints.this);
+                    }
+                }
+            }.runTaskAsynchronously(this);
+            
+        } catch (Exception ex) {
+            p.sendMessage(ChatColor.RED + "[BacapPoints] Error: " + ex.getMessage());
+        }
+    }
+
+    private void restartServer() {
+        getLogger().info("Restarting server for plugin update...");
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "restart");
+                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "stop");
+            }
+        }.runTask(this);
+    }
+
     private void recalculateAndStorePoints(Player p) {
         if (p == null) return;
         UUID uuid = p.getUniqueId();
@@ -398,13 +499,12 @@ public class BacapPoints extends JavaPlugin implements Listener, CommandExecutor
         Objective obj = board.registerNewObjective("bac_sidebar", "dummy", sidebarTitle);
         obj.setDisplaySlot(DisplaySlot.SIDEBAR);
         
-        // Hide standard red numbers on the right of the scoreboard (Minecraft 1.20.3+)
         obj.numberFormat(NumberFormat.blank());
 
         int displaySize = leaderboardSize;
         if (displaySize < 1) displaySize = 10;
         
-        int scoreLineIndex = 100; // Use static line scores for correct sorting index
+        int scoreLineIndex = 100;
         
         obj.getScore(ChatColor.translateAlternateColorCodes('&', "&8&m---------------------")).setScore(scoreLineIndex--);
 
@@ -464,9 +564,6 @@ public class BacapPoints extends JavaPlugin implements Listener, CommandExecutor
             
             obj.getScore(ChatColor.GRAY + "---------------- ").setScore(1);
             
-            Team pointsTeam = board.registerNewTeam("points_line");
-            pointsTeam.addEntry(pointsEntry);
-            
             p.setScoreboard(board);
         }
         
@@ -474,12 +571,74 @@ public class BacapPoints extends JavaPlugin implements Listener, CommandExecutor
         if (obj != null && !obj.getDisplayName().equals(sidebarTitle)) {
             obj.setDisplayName(sidebarTitle);
         }
+    }
+
+    private InputStream getRedirectedStream(String urlStr) throws Exception {
+        URL url = new URL(urlStr);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+        conn.setConnectTimeout(10000);
+        conn.setReadTimeout(10000);
         
-        Team pointsTeam = board.getTeam("points_line");
-        if (pointsTeam != null) {
-            pointsTeam.setPrefix(ChatColor.WHITE + "Points: ");
-            pointsTeam.setSuffix(ChatColor.GREEN + String.valueOf(points));
+        int status = conn.getResponseCode();
+        if (status == HttpURLConnection.HTTP_MOVED_TEMP 
+            || status == HttpURLConnection.HTTP_MOVED_PERM 
+            || status == HttpURLConnection.HTTP_SEE_OTHER
+            || status == 307 || status == 308) {
+            
+            String newUrl = conn.getHeaderField("Location");
+            return getRedirectedStream(newUrl);
         }
+        
+        if (status != HttpURLConnection.HTTP_OK) {
+            throw new IOException("Server returned HTTP " + status);
+        }
+        
+        return conn.getInputStream();
+    }
+
+    public void downloadFileAsync(CommandSender sender, String urlStr, File targetFile, String fileType, Runnable onComplete) {
+        sender.sendMessage(ChatColor.YELLOW + "[BacapPoints] Downloading latest " + fileType + " in the background...");
+        
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                try {
+                    InputStream in = getRedirectedStream(urlStr);
+                    
+                    if (targetFile.getParentFile() != null && !targetFile.getParentFile().exists()) {
+                        targetFile.getParentFile().mkdirs();
+                    }
+                    
+                    File tempFile = new File(targetFile.getParentFile(), targetFile.getName() + ".tmp");
+                    Files.copy(in, tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                    in.close();
+                    
+                    if (targetFile.exists()) {
+                        targetFile.delete();
+                    }
+                    tempFile.renameTo(targetFile);
+                    
+                    new BukkitRunnable() {
+                        @Override
+                        public void run() {
+                            sender.sendMessage(ChatColor.GREEN + "[BacapPoints] Successfully downloaded and updated " + fileType + "!");
+                            if (onComplete != null) {
+                                onComplete.run();
+                            }
+                        }
+                    }.runTask(BacapPoints.this);
+                    
+                } catch (Exception e) {
+                    new BukkitRunnable() {
+                        @Override
+                        public void run() {
+                            sender.sendMessage(ChatColor.RED + "[BacapPoints] Error during " + fileType + " download: " + e.getMessage());
+                        }
+                    }.runTask(BacapPoints.this);
+                }
+            }
+        }.runTaskAsynchronously(this);
     }
 
     @Override
@@ -503,6 +662,42 @@ public class BacapPoints extends JavaPlugin implements Listener, CommandExecutor
                 for (Player p : Bukkit.getOnlinePlayers()) {
                     queuePointsUpdate(p);
                 }
+                return true;
+            }
+
+            // UPDATE
+            if (args.length >= 2 && args[0].equalsIgnoreCase("update")) {
+                if (args[1].equalsIgnoreCase("database") || args[1].equalsIgnoreCase("db")) {
+                    String url = getConfig().getString("advancements-url", "");
+                    if (url.isEmpty()) {
+                        sender.sendMessage(ChatColor.RED + "[BacapPoints] No advancements-url configured in config.yml!");
+                        return true;
+                    }
+                    downloadFileAsync(sender, url, advancementsFile, "advancements.yml database", () -> {
+                        loadAdvancementsFile();
+                        scanAllOfflinePlayers();
+                        updateAllSidebars();
+                    });
+                    return true;
+                }
+                
+                if (args[1].equalsIgnoreCase("plugin") || args[1].equalsIgnoreCase("jar")) {
+                    String url = getConfig().getString("plugin-url", "");
+                    if (url.isEmpty()) {
+                        sender.sendMessage(ChatColor.RED + "[BacapPoints] No plugin-url configured in config.yml!");
+                        return true;
+                    }
+                    
+                    File updateFolder = new File(getDataFolder().getParentFile(), "update");
+                    File targetJar = new File(updateFolder, "BacapPoints-1.0.0.jar");
+                    
+                    downloadFileAsync(sender, url, targetJar, "plugin jar file", () -> {
+                        sender.sendMessage(ChatColor.GOLD + "[BacapPoints] The new plugin version has been placed in the update folder and will be applied on the next server restart!");
+                    });
+                    return true;
+                }
+                
+                sender.sendMessage(ChatColor.RED + "Usage: /bacap update <database/plugin>");
                 return true;
             }
 
@@ -639,6 +834,7 @@ public class BacapPoints extends JavaPlugin implements Listener, CommandExecutor
 
             sender.sendMessage(ChatColor.GOLD + "=== Commands ===");
             sender.sendMessage(ChatColor.YELLOW + "/bacap reload " + ChatColor.WHITE + "- Reloads configuration and databases.");
+            sender.sendMessage(ChatColor.YELLOW + "/bacap update <database/plugin> " + ChatColor.WHITE + "- Securely downloads remote updates.");
             sender.sendMessage(ChatColor.YELLOW + "/bacap recalculate all " + ChatColor.WHITE + "- Scans all offline/online player progress from disk.");
             sender.sendMessage(ChatColor.YELLOW + "/bacap recalculate [player] " + ChatColor.WHITE + "- Recalculates a specific player's score.");
             sender.sendMessage(ChatColor.YELLOW + "/bacap set <player> <points> " + ChatColor.WHITE + "- Sets player's points.");

@@ -9,7 +9,6 @@ namespaces:
 
 # Specific points overrides for individual advancements.
 # Format: "namespace:category/name": points
-# Tip: You can also edit advancements.yml directly to adjust any advancement score!
 overrides:
   "blazeandcave:bacap/root": 0
 
@@ -24,3 +23,17 @@ leaderboard-size: 10
 
 # Title of the scoreboard in the sidebar (supports color codes with &)
 sidebar-title: "&6&l★ BAC LEADERBOARD ★"
+
+# ==============================================================================
+# Auto-Updater Configuration
+# ==============================================================================
+
+# URL to update advancements.yml (the points database) directly from the internet.
+# You can host your own advancements.yml on GitHub, pastebin, or your webserver.
+# Run /bacap update database to download and apply it instantly in real-time!
+advancements-url: "https://raw.githubusercontent.com/Padawan986/BAC-Scoreboard/refs/heads/main/src/main/resources/advancements.yml"
+
+# URL to update the plugin itself (.jar file) directly from the internet.
+# Run /bacap update plugin to securely download the new jar into 'plugins/update/',
+# applying the update automatically on the next server restart.
+plugin-url: ""
